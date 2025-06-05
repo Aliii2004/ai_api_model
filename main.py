@@ -1,7 +1,7 @@
 from fastapi import FastAPI, File, UploadFile, HTTPException
-from fastapi.responses import JSONResponse, FileResponse # FileResponse import qiling
-from fastapi.staticfiles import StaticFiles # StaticFiles import qiling
-from starlette.responses import HTMLResponse # HTMLResponse import qiling (index.html uchun)
+from fastapi.responses import JSONResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
+from starlette.responses import HTMLResponse 
 
 
 
@@ -15,9 +15,7 @@ from PIL import Image
 import io
 import numpy as np
 
-# === ALINet Model Arxitekturasi Ta'riflari (Sizning notebookingizdan olindi) ===
-# Bu klass ta'riflari sizning notebookingizdagi bilan bir xil bo'lishi kerak.
-# Yaxshiroq tashkillashtirish uchun bularni alohida faylga joylashtirib, keyin import qilishingiz mumkin.
+
 
 class ALIBlock(nn.Module):
     """
@@ -199,8 +197,7 @@ class ALINet(nn.Module):
             nn.Linear(512, num_classes)
         )
 
-        # Initialize weights (API uchun keragi yo'q, yuklangan modelda bor)
-        # self._initialize_weights()
+     
 
     def forward(self, x):
         # Input layer
@@ -235,30 +232,20 @@ class ALINet(nn.Module):
 
 app = FastAPI(title="ALINet Malaria Detection API", version="1.0")
 
-# === Statik fayllarni qo'shish ===
-# "/" yo'lida index.html ni ko'rsatish
-# Bu asosiy sahifa bo'ladi
+
 @app.get("/", response_class=HTMLResponse)
 async def read_root():
     with open("index.html", "r") as f:
         return HTMLResponse(content=f.read())
 
-# Agar loyiha ichida boshqa statik fayllar (rasmlar, boshqa css/js fayllar) bo'lsa
-# Ularni ham shu orqali taqdim etishingiz mumkin.
-# Hozirgi holatda faqat index.html uchun get("/") ishlatish kifoya
-# app.mount("/static", StaticFiles(directory="."), name="static_files") # Agar kerak bo'lsa
-
-
-# ... (Model yuklash qismi - avvalgidek qoladi) ...
-MODEL_PATH = 'alinet_best_model.pth' # Model shu papkada joylashgan
+MODEL_PATH = 'alinet_best_model.pth'
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print(f"API ishlatilayotgan qurilma: {DEVICE}")
 
 model = ALINet(num_classes=2)
 
 try:
-    # weights_only=False ni o'zingizning xavfsizlik baholashingiz bo'yicha qo'shing
-    checkpoint = torch.load(MODEL_PATH, map_location=DEVICE, weights_only=False) # Yoki yuqoridagi 2-variant
+    checkpoint = torch.load(MODEL_PATH, map_location=DEVICE, weights_only=False) 
     model.load_state_dict(checkpoint['model_state_dict'])
     model.to(DEVICE)
     model.eval() # Inference uchun eval mode
@@ -266,11 +253,9 @@ try:
 except FileNotFoundError:
     raise FileNotFoundError(f"Xato: Model fayli topilmadi: {MODEL_PATH}. Iltimos, uni main.py bilan bir papkaga joylashtiring.")
 except Exception as e:
-    # collections.defaultdict xatosini boshqarish yoki weights_only=False ishlatish
     raise RuntimeError(f"Modelni yuklashda xato yuz berdi: {e}")
 
 
-# ... (Transformatsiyalar va CLASS_NAMES - avvalgidek qoladi) ...
 MEAN = [0.485, 0.456, 0.406]
 STD = [0.229, 0.224, 0.225]
 IMG_SIZE = (128, 128)
@@ -283,8 +268,6 @@ inference_transform = transforms.Compose([
 
 CLASS_NAMES = ['Parasitized', 'Uninfected']
 
-
-# === API Endpoint ===
 @app.post("/predict")
 async def predict(file: UploadFile = File(...)):
     """
@@ -294,21 +277,17 @@ async def predict(file: UploadFile = File(...)):
         raise HTTPException(status_code=415, detail="Faqat rasm fayllarini yuklang")
 
     try:
-        # Rasmni o'qish
         contents = await file.read()
-        img = Image.open(io.BytesIO(contents)).convert("RGB") # RGB ga o'tkazish
+        img = Image.open(io.BytesIO(contents)).convert("RGB") 
 
-        # Transformatsiyalarni qo'llash
         img_tensor = inference_transform(img)
-        img_tensor = img_tensor.unsqueeze(0) # Batch o'lchamini qo'shish (1, C, H, W)
+        img_tensor = img_tensor.unsqueeze(0) 
         img_tensor = img_tensor.to(DEVICE)
 
-        # Inference qilish
         with torch.no_grad():
             output = model(img_tensor)
-            probabilities = F.softmax(output, dim=1)[0] # Batch dan chiqarish
+            probabilities = F.softmax(output, dim=1)[0] 
 
-        # Natijalarni qayta ishlash
         predicted_prob, predicted_class_index = torch.max(probabilities, 0)
 
         result = {
@@ -321,14 +300,10 @@ async def predict(file: UploadFile = File(...)):
         return JSONResponse(content=result)
 
     except Exception as e:
-        # Xatolikni konsolga chiqarish (debugging uchun foydali)
         print(f"Inference xatosi: {e}")
         raise HTTPException(status_code=500, detail=f"Bashorat qilishda xato: {e}")
 
 
-# === Ishga tushirish (lokal test qilish uchun) ===
 if __name__ == "__main__":
     import uvicorn
-    # Statik fayllarni taqdim etish uchun root_path="" kerak bo'lmasligi kerak
-    # Lekin agar localhost dan boshqa joyda deploy qilsangiz kerak bo'lishi mumkin
     uvicorn.run(app, host="0.0.0.0", port=8000)
